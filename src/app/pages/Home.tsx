@@ -1,25 +1,21 @@
-// src/app/page.tsx
+// src/app/pages/Home.tsx
 "use client";
 
 import React, { JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  useInfiniteQuery,
-  type QueryFunctionContext,
-  type InfiniteData,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, type QueryFunctionContext, type InfiniteData } from "@tanstack/react-query";
 
-import Layout from "./components/Layout";
-import SearchBar from "./components/SearchBar";
-import Filters from "./components/Filters";
-import CharacterCard from "./components/CharacterCard";
-import LoadingSkeleton from "./components/LoadingSkeleton";
+import Layout from "../components/Layout";
+import SearchBar from "../components/SearchBar";
+import Filters from "../components/Filters";
+import CharacterCard from "../components/CharacterCard";
+import LoadingSkeleton from "../components/LoadingSkeleton";
 
-import { fetchCharacters, type CharactersResponse, type Character } from "./lib/api";
-import { useDebounce } from "./hooks/useDebounce";
-import { useFavorites } from "./hooks/useFavorites";
+import { fetchCharacters, type CharactersResponse, type Character } from "../lib/api";
+import { useDebounce } from "../hooks/useDebounce";
+import { useFavorites } from "../hooks/useFavorites";
 
-export default function Page(): JSX.Element {
+export default function Home(): JSX.Element {
   const searchParams = useSearchParams();
 
   // read initial values from URL
@@ -29,7 +25,7 @@ export default function Page(): JSX.Element {
   const sortParam = searchParams?.get("sort") ?? "name_asc";
   const favoritesParam = searchParams?.get("favorites") === "1";
 
-  // controlled local state
+  // local controlled inputs
   const [qLocal, setQLocal] = useState<string>(qParam);
   const [status, setStatus] = useState<string>(statusParam);
   const [species, setSpecies] = useState<string>(speciesParam);
@@ -38,7 +34,7 @@ export default function Page(): JSX.Element {
 
   const debouncedQ = useDebounce(qLocal, 350);
 
-  // Keep URL in sync (replaceState so sharing the URL reproduces state)
+  // sync controls -> URL using replaceState (keeps URL shareable)
   useEffect(() => {
     const url = new URL(window.location.href);
     if (debouncedQ) url.searchParams.set("q", debouncedQ);
@@ -62,7 +58,9 @@ export default function Page(): JSX.Element {
 
   const fav = useFavorites();
 
-  // --- useInfiniteQuery with explicit generics ---
+  // --- useInfiniteQuery (typed) ---
+  // QueryFn returns CharactersResponse for each page.
+  // We declare the infinite-data type explicitly so `data.pages` is available.
   const {
     data,
     fetchNextPage,
@@ -74,24 +72,26 @@ export default function Page(): JSX.Element {
     error,
     refetch,
   } = useInfiniteQuery<
-    CharactersResponse,                // TQueryFnData (one page's shape)
-    Error,                             // TError
-    InfiniteData<CharactersResponse, number>, // TData (the aggregated infinite wrapper)
-    readonly unknown[],                // TQueryKey
-    number                             // TPageParam
+    CharactersResponse, // TQueryFnData (each page)
+    Error,              // TError
+    InfiniteData<CharactersResponse, number>, // TData (infinite data wrapper)
+    readonly unknown[], // TQueryKey
+    number              // TPageParam
   >({
     queryKey: ["characters", debouncedQ, status, species],
-    queryFn: async (ctx: QueryFunctionContext<readonly unknown[], number>) => {
-      const pageParam = (ctx.pageParam ?? 1) as number;
-      const signal = ctx.signal;
-      return fetchCharacters({
+    queryFn: async (context: QueryFunctionContext<readonly unknown[], number>) => {
+      const pageParam = (context.pageParam ?? 1) as number;
+      const signal = context.signal;
+      const res = await fetchCharacters({
         page: pageParam,
         name: debouncedQ || undefined,
         status: status || undefined,
         species: species || undefined,
         signal,
       });
+      return res; // CharactersResponse
     },
+    // initial page param (keeps typings happy and is sensible here)
     initialPageParam: 1,
     getNextPageParam: (last: CharactersResponse) => {
       const next = last?.info?.next;
@@ -105,10 +105,10 @@ export default function Page(): JSX.Element {
     staleTime: 1000 * 30,
   });
 
-  // aggregate typed results
+  // aggregate items from typed pages
   const items: Character[] = useMemo(() => {
-    const pages = (data as InfiniteData<CharactersResponse, number>)?.pages ?? [];
-    return pages.flatMap((p) => p.results ?? []);
+    const pages = data?.pages ?? [];
+    return pages.flatMap((p: CharactersResponse) => p.results ?? []);
   }, [data]);
 
   // favorites filter + client-side sort
@@ -118,12 +118,10 @@ export default function Page(): JSX.Element {
       const ids = Object.keys(fav.favorites).map((s) => Number(s));
       list = list.filter((it) => ids.includes(it.id));
     }
-
     if (sort === "name_asc") list.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === "name_desc") list.sort((a, b) => b.name.localeCompare(a.name));
     else if (sort === "id_asc") list.sort((a, b) => a.id - b.id);
     else if (sort === "id_desc") list.sort((a, b) => b.id - a.id);
-
     return list;
   }, [items, fav.favorites, showFavorites, sort]);
 

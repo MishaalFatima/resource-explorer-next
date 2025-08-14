@@ -1,7 +1,7 @@
 // src/app/pages/CharacterDetail.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { JSX, useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Layout from "../components/Layout";
